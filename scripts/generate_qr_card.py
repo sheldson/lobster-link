@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -6,11 +7,22 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 
 
-def load_font(size: int):
+def load_en_font(size: int):
     for name in [
         "/System/Library/Fonts/Supplemental/Avenir Next.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
         "/System/Library/Fonts/Helvetica.ttc",
+    ]:
+        try:
+            return ImageFont.truetype(name, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def load_cn_font(size: int):
+    for name in [
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
     ]:
         try:
             return ImageFont.truetype(name, size)
@@ -26,25 +38,41 @@ def draw_center_text(draw, text, y, font, color, card_w):
     draw.text((x, y), text, font=font, fill=color)
 
 
-def lobster_avatar(size=192):
+def lobster_avatar(size=220):
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    # body
-    d.ellipse((8, 18, size - 8, size - 8), fill=(255, 106, 59))
-    # claws
-    d.ellipse((8, 0, 70, 62), fill=(255, 86, 46))
-    d.ellipse((size - 70, 0, size - 8, 62), fill=(255, 86, 46))
+
+    # antennas
+    d.line((size * 0.43, size * 0.20, size * 0.28, size * 0.03), fill=(255, 95, 56), width=7)
+    d.line((size * 0.57, size * 0.20, size * 0.72, size * 0.03), fill=(255, 95, 56), width=7)
+
+    # claws (more lobster-like)
+    d.ellipse((8, 30, 88, 110), fill=(255, 92, 52))
+    d.polygon([(38, 20), (68, 5), (78, 30), (48, 40)], fill=(255, 76, 40))
+    d.ellipse((size - 88, 30, size - 8, 110), fill=(255, 92, 52))
+    d.polygon([(size - 38, 20), (size - 68, 5), (size - 78, 30), (size - 48, 40)], fill=(255, 76, 40))
+
+    # body + tail segments
+    d.ellipse((26, 48, size - 26, size - 18), fill=(255, 112, 68))
+    d.rounded_rectangle((62, 138, size - 62, 168), radius=16, fill=(255, 140, 88))
+    d.rounded_rectangle((72, 166, size - 72, 194), radius=14, fill=(255, 156, 106))
+
     # eyes
-    d.ellipse((60, 68, 84, 92), fill=(255, 255, 255))
-    d.ellipse((108, 68, 132, 92), fill=(255, 255, 255))
-    d.ellipse((68, 76, 76, 84), fill=(42, 42, 42))
-    d.ellipse((116, 76, 124, 84), fill=(42, 42, 42))
-    # smile
-    d.arc((52, 86, 140, 142), 20, 160, fill=(255, 255, 255), width=6)
+    d.ellipse((78, 88, 102, 112), fill=(255, 255, 255))
+    d.ellipse((118, 88, 142, 112), fill=(255, 255, 255))
+    d.ellipse((86, 96, 94, 104), fill=(24, 28, 34))
+    d.ellipse((126, 96, 134, 104), fill=(24, 28, 34))
+
+    # mouth
+    d.arc((72, 112, 148, 152), 20, 160, fill=(255, 255, 255), width=6)
     return img
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--owner", default="林晓胜")
+    args = ap.parse_args()
+
     qr_path = DATA / "my-lobster-qr-latest.png"
     out = DATA / "my-lobster-qr-card.png"
     if not qr_path.exists():
@@ -54,19 +82,20 @@ def main():
     card = Image.new("RGB", (card_w, card_h), (242, 246, 252))
     draw = ImageDraw.Draw(card)
 
-    title_f = load_font(64)
-    sub_f = load_font(34)
-    body_f = load_font(40)
-    small_f = load_font(28)
+    title_f = load_en_font(62)
+    cn_f = load_cn_font(38)
+    body_f = load_cn_font(42)
+    small_f = load_en_font(28)
+    name_f = load_cn_font(40)
 
     # avatar centered
-    avatar = lobster_avatar(192)
-    card.paste(avatar, ((card_w - 192) // 2, 96), avatar)
+    avatar = lobster_avatar(220)
+    card.paste(avatar, ((card_w - 220) // 2, 82), avatar)
 
-    draw_center_text(draw, "Lobster Link", 318, title_f, (30, 38, 50), card_w)
-    draw_center_text(draw, "让龙虾和龙虾协作起来", 398, sub_f, (93, 105, 122), card_w)
+    draw_center_text(draw, "Lobster Connect", 330, title_f, (30, 38, 50), card_w)
+    draw_center_text(draw, "让龙虾和龙虾协作起来", 412, cn_f, (93, 105, 122), card_w)
 
-    # centered panel with soft shadow
+    # centered panel with shadow
     panel_w, panel_h = 820, 860
     panel_x = (card_w - panel_w) // 2
     panel_y = 500
@@ -85,9 +114,9 @@ def main():
     card.paste(qr, (qr_x, qr_y))
 
     draw_center_text(draw, "扫码添加我的龙虾", panel_y + 735, body_f, (24, 28, 34), card_w)
-    draw_center_text(draw, "Lobster:// Secure Connect", panel_y + 790, small_f, (120, 130, 146), card_w)
+    draw_center_text(draw, "Lobster:// Secure Connect", panel_y + 794, small_f, (120, 130, 146), card_w)
 
-    draw_center_text(draw, "Powered by Lobster Link", 1560, small_f, (143, 152, 168), card_w)
+    draw_center_text(draw, f"{args.owner} Lobster", 1550, name_f, (70, 78, 92), card_w)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     card.save(out, quality=95)
