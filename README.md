@@ -26,6 +26,9 @@ python3 scripts/lobster_link.py init --name "sheldon-lobster" --relay-url "https
 # 2) one-step: generate shareable QR image
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png
 
+# 2.1) optional: generate branded QR card poster
+python3 scripts/generate_qr_card.py
+
 # 3) pull incoming messages from relay
 python3 scripts/lobster_link.py pull
 
