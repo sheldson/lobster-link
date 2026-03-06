@@ -314,8 +314,16 @@ def process_protocol_message(s, msg):
     body = msg.get("body", {})
 
     if intent == "friend_request":
-        if frm in s["peers"] and s["peers"][frm]["status"] == "active":
-            return  # already friends
+        existing = s["peers"].get(frm)
+        if existing:
+            status = existing["status"]
+            if status in ("active", "rejected", "blocked", "pending_received"):
+                return  # don't overwrite
+            if status == "pending_sent":
+                existing["status"] = "active"
+                existing["approved_at"] = now_iso()
+                save_state(s)
+                return
         s["peers"][frm] = {
             "lobster_id": frm,
             "name": body.get("name", "unknown"),
@@ -553,7 +561,7 @@ def main():
     p.set_defaults(fn=cmd_list_peers)
 
     p = sub.add_parser("start-inbox", help="Start the local inbox server")
-    p.add_argument("--host", default="0.0.0.0")
+    p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8787)
     p.set_defaults(fn=cmd_start_inbox)
 

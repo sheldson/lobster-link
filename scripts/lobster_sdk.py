@@ -7,10 +7,12 @@ An AI agent imports this module and calls functions directly.
 """
 import base64
 import datetime as dt
+import fcntl
 import json
 import uuid
 from pathlib import Path
 from urllib import request
+from urllib.parse import urlparse
 
 from nacl.signing import SigningKey, VerifyKey
 from nacl.exceptions import BadSignatureError
@@ -79,7 +81,33 @@ def _verify_ed25519(verify_key_b64: str, payload_obj: dict, sig_b64: str) -> boo
         return False
 
 
+def _validate_endpoint(url: str) -> bool:
+    """Validate that an endpoint URL is a safe external HTTPS URL."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https", "http"):
+            return False
+        host = parsed.hostname or ""
+        # Block private/internal IPs and metadata endpoints
+        if host in ("localhost", "127.0.0.1", "0.0.0.0", "::1", ""):
+            return False
+        if host.startswith("169.254.") or host.startswith("10."):
+            return False
+        if host.startswith("172.") and 16 <= int(host.split(".")[1]) <= 31:
+            return False
+        if host.startswith("192.168."):
+            return False
+        # Must end with /lobster/inbox
+        if not parsed.path.rstrip("/").endswith("/lobster/inbox"):
+            return False
+        return True
+    except Exception:
+        return False
+
+
 def _post_json(url, payload):
+    if not _validate_endpoint(url):
+        raise ValueError(f"Invalid or unsafe endpoint URL: {url}")
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     req = request.Request(url, data=data, method="POST", headers={"Content-Type": "application/json"})
     with request.urlopen(req, timeout=12) as resp:
@@ -116,8 +144,22 @@ def _process_protocol_message(s, msg):
     body = msg.get("body", {})
 
     if intent == "friend_request":
-        if frm in s["peers"] and s["peers"][frm]["status"] == "active":
-            return {"event": "friend_request_duplicate", "from": frm}
+        existing = s["peers"].get(frm)
+        if existing:
+            status = existing["status"]
+            # Don't overwrite active, rejected, or blocked peers
+            if status in ("active", "rejected", "blocked"):
+                return {"event": "friend_request_ignored", "from": frm, "reason": f"peer_is_{status}"}
+            # If already pending_received, ignore duplicate
+            if status == "pending_received":
+                return {"event": "friend_request_duplicate", "from": frm}
+            # pending_sent: the other side also sent us a request — auto-activate (mutual add)
+            if status == "pending_sent":
+                existing["status"] = "active"
+                existing["approved_at"] = _now_iso()
+                _save_state(s)
+                return {"event": "friend_mutual_add", "from": frm}
+        # New peer — store as pending_received
         s["peers"][frm] = {
             "lobster_id": frm,
             "name": body.get("name", "unknown"),
@@ -407,19 +449,25 @@ def pull_messages() -> dict:
         return {"ok": False, "error": "not_initialized"}
 
     _ensure_files()
-    inbox_text = INBOX.read_text().strip()
+    # Atomic read-and-clear with file locking to prevent race with inbox_server
     raw_msgs = []
-    if inbox_text:
-        for line in inbox_text.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                raw_msgs.append(json.loads(line))
-            except Exception:
-                continue
-        # Clear the inbox file after reading
-        INBOX.write_text("")
+    with INBOX.open("r+", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            inbox_text = f.read().strip()
+            if inbox_text:
+                f.seek(0)
+                f.truncate()
+                for line in inbox_text.split("\n"):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        raw_msgs.append(json.loads(line))
+                    except Exception:
+                        continue
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
     if not raw_msgs:
         if not me.get("endpoint"):
@@ -435,23 +483,34 @@ def pull_messages() -> dict:
             continue
         seen_ids.add(msg_id)
 
-        # Verify signature if we have the sender's verify_key
+        # Verify signature — reject unsigned or invalid messages
         frm = m.get("from", "")
         sig = m.pop("sig", "")
+
+        # Reject unsigned messages
+        if not sig:
+            events.append({"event": "unsigned_rejected", "from": frm, "message_id": m.get("id")})
+            continue
+
         peer = s["peers"].get(frm)
         vk = peer.get("verify_key", "") if peer else ""
         # For friend_request, verify_key comes in the body
         if m.get("intent") == "friend_request" and not vk:
             vk = m.get("body", {}).get("verify_key", "")
-        if vk and sig:
-            if not _verify_ed25519(vk, m, sig):
-                m["sig"] = sig
-                m["_sig_valid"] = False
-                _append_jsonl(INBOX, m)
-                events.append({"event": "sig_invalid", "from": frm, "message_id": m.get("id")})
-                continue
+
+        if not vk:
+            events.append({"event": "no_verify_key", "from": frm, "message_id": m.get("id")})
+            continue
+
+        if not _verify_ed25519(vk, m, sig):
+            m["sig"] = sig
+            m["_sig_valid"] = False
+            _append_jsonl(INBOX, m)
+            events.append({"event": "sig_invalid", "from": frm, "message_id": m.get("id")})
+            continue
+
         m["sig"] = sig
-        m["_sig_valid"] = True if (vk and sig) else None
+        m["_sig_valid"] = True
         _append_jsonl(INBOX, m)
         ev = _process_protocol_message(s, m)
         if ev:

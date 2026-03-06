@@ -10,16 +10,13 @@ Health:   GET  /lobster/inbox — returns {"ok": true} (useful for tunnel health
 """
 import argparse
 import base64
+import fcntl
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
-try:
-    from nacl.signing import VerifyKey
-    from nacl.exceptions import BadSignatureError
-    HAS_NACL = True
-except ImportError:
-    HAS_NACL = False
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -49,8 +46,6 @@ def count_inbox_messages():
 
 def verify_signature(verify_key_b64: str, payload_obj: dict, sig_b64: str) -> bool:
     """Verify ed25519 signature on a message envelope."""
-    if not HAS_NACL:
-        return True  # if PyNaCl not installed, skip verification (log warning)
     try:
         vk_bytes = base64.urlsafe_b64decode(verify_key_b64)
         vk = VerifyKey(vk_bytes)
@@ -62,6 +57,17 @@ def verify_signature(verify_key_b64: str, payload_obj: dict, sig_b64: str) -> bo
         return False
 
 
+def append_inbox(msg):
+    """Append a message to inbox with file locking to prevent race conditions."""
+    DATA.mkdir(parents=True, exist_ok=True)
+    with INBOX.open("a", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
+
+
 class InboxHandler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self.send_response(code)
@@ -70,7 +76,6 @@ class InboxHandler(BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(obj, ensure_ascii=False).encode("utf-8"))
 
     def log_message(self, format, *args):
-        # Quieter logging
         pass
 
     def do_GET(self):
@@ -89,7 +94,6 @@ class InboxHandler(BaseHTTPRequestHandler):
         if n > MAX_BODY_BYTES:
             return self._json(413, {"ok": False, "error": "payload_too_large"})
 
-        # Queue size limit
         if count_inbox_messages() >= MAX_QUEUE_SIZE:
             return self._json(503, {"ok": False, "error": "inbox_full"})
 
@@ -113,36 +117,37 @@ class InboxHandler(BaseHTTPRequestHandler):
             if frm not in peers or peers[frm].get("status") != "active":
                 return self._json(403, {"ok": False, "error": "peer_not_active"})
 
-        # Verify ed25519 signature
+        # REQUIRE signature on all messages — reject unsigned messages
         sig = msg.get("sig", "")
-        if sig:
-            # Get verify_key: from peer record, or from body (for friend_request)
-            verify_key = ""
-            peer = peers.get(frm)
-            if peer:
-                verify_key = peer.get("verify_key", "")
-            if not verify_key and intent == "friend_request":
-                verify_key = msg.get("body", {}).get("verify_key", "")
+        if not sig:
+            return self._json(403, {"ok": False, "error": "signature_required"})
 
-            if verify_key:
-                payload_without_sig = {k: v for k, v in msg.items() if k != "sig"}
-                if not verify_signature(verify_key, payload_without_sig, sig):
-                    return self._json(403, {"ok": False, "error": "invalid_signature"})
+        # Get verify_key: from peer record, or from body (for friend_request)
+        verify_key = ""
+        peer = peers.get(frm)
+        if peer:
+            verify_key = peer.get("verify_key", "")
+        if not verify_key and intent == "friend_request":
+            verify_key = msg.get("body", {}).get("verify_key", "")
 
-        DATA.mkdir(parents=True, exist_ok=True)
-        with INBOX.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(msg, ensure_ascii=False) + "\n")
+        if not verify_key:
+            return self._json(403, {"ok": False, "error": "no_verify_key"})
+
+        payload_without_sig = {k: v for k, v in msg.items() if k != "sig"}
+        if not verify_signature(verify_key, payload_without_sig, sig):
+            return self._json(403, {"ok": False, "error": "invalid_signature"})
+
+        append_inbox(msg)
         self._json(200, {"ok": True, "stored": True})
 
 
 def main():
     ap = argparse.ArgumentParser(description="Lobster inbox server (run locally, expose via tunnel)")
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8787)
     args = ap.parse_args()
     srv = HTTPServer((args.host, args.port), InboxHandler)
     print(f"Lobster inbox listening on http://{args.host}:{args.port}/lobster/inbox")
-    print("Expose this via tunnel (ngrok/cloudflared) for P2P communication.")
     srv.serve_forever()
 
 
