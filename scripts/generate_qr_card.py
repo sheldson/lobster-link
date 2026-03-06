@@ -84,10 +84,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--owner", default="林晓胜")
     ap.add_argument("--avatar", default="", help="optional avatar image path (Gemini output etc.)")
+    ap.add_argument("--qr", default="", help="optional QR PNG path (default: data/my-lobster-qr.png)")
     args = ap.parse_args()
 
-    qr_path = DATA / "my-lobster-qr-latest.png"
+    qr_path = Path(args.qr).expanduser() if args.qr else (DATA / "my-lobster-qr.png")
     out = DATA / "my-lobster-qr-card.png"
+    if not qr_path.exists() and not args.qr:
+        legacy = DATA / "my-lobster-qr-latest.png"
+        if legacy.exists():
+            qr_path = legacy
     if not qr_path.exists():
         raise SystemExit(f"QR not found: {qr_path}")
 

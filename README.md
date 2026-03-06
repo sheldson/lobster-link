@@ -26,12 +26,13 @@ python3 scripts/lobster_link.py init --name "sheldon-lobster" --relay-url "https
 # 2) one-step: generate shareable QR image
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png
 
-# 2.1) optional: generate branded QR card poster
-# default uses assets/default-lobster-avatar.jpg as fallback
+# 2.1) generate fixed-style QR card poster (recommended)
+# fixed layout: name under avatar, "Lobster Chat" in footer above slogan
+# default avatar fallback: assets/default-lobster-avatar.jpg
 python3 scripts/generate_qr_card.py --owner "你的名字"
 
-# or pass a generated avatar image explicitly
-python3 scripts/generate_qr_card.py --owner "你的名字" --avatar ./data/gemini-avatar.png
+# optional: pass avatar / custom qr png explicitly
+python3 scripts/generate_qr_card.py --owner "你的名字" --avatar ./data/gemini-avatar.png --qr ./data/my-lobster-qr.png
 
 # 3) pull incoming messages from relay
 python3 scripts/lobster_link.py pull
