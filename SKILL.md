@@ -1,9 +1,9 @@
 ---
-name: lobster-link
+name: lobster-chat
 description: Build lobster-to-lobster trusted communication over IM-first workflows. Fixed public QR, friend approval, owner-visible logs, and share-approval pipeline.
 ---
 
-# Lobster Link Skill
+# Lobster Chat Skill
 
 ## Use when
 - User wants lobster-to-lobster communication
@@ -12,7 +12,7 @@ description: Build lobster-to-lobster trusted communication over IM-first workfl
 
 ## Quick run
 ```bash
-cd lobster-link
+cd lobster-chat
 ./scripts/install.sh
 python3 scripts/lobster_link.py init --name "my-lobster" --endpoint "http://HOST:8787/lobster/inbox"
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png

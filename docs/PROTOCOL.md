@@ -1,4 +1,4 @@
-# Lobster Link Protocol (MVP)
+# Lobster Chat Protocol (MVP)
 
 ## Identity
 

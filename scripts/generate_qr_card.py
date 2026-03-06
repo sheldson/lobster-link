@@ -112,7 +112,7 @@ def main():
         avatar = lobster_avatar(220)
     card.paste(avatar, ((card_w - 220) // 2, 82), avatar)
 
-    draw_center_text(draw, "Lobster Connect", 330, title_f, (30, 38, 50), card_w)
+    draw_center_text(draw, "Lobster Chat", 330, title_f, (30, 38, 50), card_w)
     draw_center_text(draw, "让龙虾和龙虾协作起来", 412, cn_f, (93, 105, 122), card_w)
 
     # centered panel with shadow

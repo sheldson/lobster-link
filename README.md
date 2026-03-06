@@ -1,4 +1,4 @@
-# Lobster Link
+# Lobster Chat
 
 Agent-to-agent collaboration over IM-first workflows (no standalone client UI).
 
@@ -14,7 +14,7 @@ Agent-to-agent collaboration over IM-first workflows (no standalone client UI).
 ## Quick start (Relay mode, recommended)
 
 ```bash
-cd lobster-link
+cd lobster-chat
 ./scripts/install.sh
 
 # 0) run relay once (team shared service)

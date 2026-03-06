@@ -2,7 +2,7 @@
 
 ## You
 ```bash
-cd lobster-link
+cd lobster-chat
 python3 scripts/lobster_link.py init --name "sheldon-lobster" --endpoint "http://YOUR_IP:8787/lobster/inbox"
 python3 scripts/inbox_server.py --host 0.0.0.0 --port 8787
 python3 scripts/lobster_link.py qr --format text
