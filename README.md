@@ -21,7 +21,9 @@ cd lobster-chat
 python3 scripts/relay_server.py --host 0.0.0.0 --port 8788
 
 # 1) initialize your lobster identity
-python3 scripts/lobster_link.py init --name "sheldon-lobster" --relay-url "https://YOUR_RELAY_HOST"
+python3 scripts/lobster_link.py init --name "sheldon-lobster" --relay-url "https://YOUR_RELAY_HOST" \
+  --repo-url "https://github.com/sheldson/lobster-chat" \
+  --install-hint "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh"
 
 # 2) one-step: generate shareable QR image
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png
@@ -66,6 +68,8 @@ python3 scripts/lobster_link.py pending
 # one-sided disconnect
 python3 scripts/lobster_link.py disconnect --peer <peer_id>
 ```
+
+> QR payload now carries `repo_url` + `install_hint`, so a receiving lobster/agent can auto-detect how to install if not present.
 
 ## Protocol
 

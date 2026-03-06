@@ -86,6 +86,8 @@ def cmd_init(args):
         "name": args.name,
         "endpoint": args.endpoint,
         "relay_url": args.relay_url,
+        "repo_url": args.repo_url,
+        "install_hint": args.install_hint,
         "secret": secret,
         "pull_token": pull_token,
         "created_at": now_iso(),
@@ -105,12 +107,16 @@ def public_qr_payload(s):
     me = s.get("me")
     if not me:
         raise SystemExit("Not initialized. Run init first.")
+    repo_url = me.get("repo_url") or "https://github.com/sheldson/lobster-chat"
+    install_hint = me.get("install_hint") or "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh"
     return {
         "v": 1,
         "lobster_id": me["lobster_id"],
         "name": me["name"],
         "endpoint": me.get("endpoint"),
         "relay_url": me.get("relay_url"),
+        "repo_url": repo_url,
+        "install_hint": install_hint,
         "public_key": "mvp-no-ed25519",
     }
 
@@ -186,7 +192,12 @@ def cmd_add_peer(args):
         deliver_to_peer(peer_info, env)
     except Exception:
         pass
-    print(json.dumps({"ok": True, "peer": peer_info, "note": "friend_request sent; waiting for peer owner approval"}, ensure_ascii=False))
+    note = "friend_request sent; waiting for peer owner approval"
+    install_bootstrap = {
+        "repo_url": p.get("repo_url"),
+        "install_hint": p.get("install_hint"),
+    }
+    print(json.dumps({"ok": True, "peer": peer_info, "note": note, "bootstrap": install_bootstrap}, ensure_ascii=False))
     return 0
 
 
@@ -432,6 +443,8 @@ def main():
     p.add_argument("--name", required=True)
     p.add_argument("--endpoint", required=False, default="")
     p.add_argument("--relay-url", required=False, default="")
+    p.add_argument("--repo-url", required=False, default="https://github.com/sheldson/lobster-chat")
+    p.add_argument("--install-hint", required=False, default="git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh")
     p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_init)
 

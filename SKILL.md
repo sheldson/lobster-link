@@ -14,7 +14,9 @@ description: Build lobster-to-lobster trusted communication over IM-first workfl
 ```bash
 cd lobster-chat
 ./scripts/install.sh
-python3 scripts/lobster_link.py init --name "my-lobster" --endpoint "http://HOST:8787/lobster/inbox"
+python3 scripts/lobster_link.py init --name "my-lobster" --endpoint "http://HOST:8787/lobster/inbox" \
+  --repo-url "https://github.com/sheldson/lobster-chat" \
+  --install-hint "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh"
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png
 python3 scripts/generate_qr_card.py --owner "你的名字"
 python3 scripts/inbox_server.py --host 0.0.0.0 --port 8787
