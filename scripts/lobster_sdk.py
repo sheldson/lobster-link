@@ -93,8 +93,10 @@ def _validate_endpoint(url: str) -> bool:
             return False
         if host.startswith("169.254.") or host.startswith("10."):
             return False
-        if host.startswith("172.") and 16 <= int(host.split(".")[1]) <= 31:
-            return False
+        if host.startswith("172."):
+            parts = host.split(".")
+            if len(parts) >= 2 and parts[1].isdigit() and 16 <= int(parts[1]) <= 31:
+                return False
         if host.startswith("192.168."):
             return False
         # Must end with /lobster/inbox
@@ -448,6 +450,8 @@ def send_message(to: str, text: str, intent: str = "ask") -> dict:
     peer = s["peers"].get(to)
     if not peer or peer.get("status") != "active":
         return {"ok": False, "error": "peer_not_active"}
+    if len(text.encode("utf-8")) > 64 * 1024:
+        return {"ok": False, "error": "message_too_large", "max_bytes": 65536}
     env = _build_envelope(s, to, intent, {"text": text})
     _append_jsonl(OUTBOX, env)
     try:

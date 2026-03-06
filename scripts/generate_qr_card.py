@@ -8,11 +8,45 @@ DATA = ROOT / "data"
 ASSETS = ROOT / "assets"
 
 
-def load_en_font(size: int):
-    for name in [
+def _font_candidates_en():
+    """Return English font paths for macOS, Linux, and Windows."""
+    return [
+        # macOS
         "/System/Library/Fonts/Supplemental/Avenir Next.ttc",
         "/System/Library/Fonts/Helvetica.ttc",
-    ]:
+        # Linux (common distro fonts)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/ubuntu/Ubuntu-R.ttf",
+        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
+        # Windows
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    ]
+
+
+def _font_candidates_cn():
+    """Return CJK font paths for macOS, Linux, and Windows."""
+    return [
+        # macOS
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        # Linux
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/wenquanyi/wqy-zenhei/wqy-zenhei.ttc",
+        # Windows
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simsun.ttc",
+    ]
+
+
+def load_en_font(size: int):
+    for name in _font_candidates_en():
         try:
             return ImageFont.truetype(name, size)
         except Exception:
@@ -21,10 +55,13 @@ def load_en_font(size: int):
 
 
 def load_cn_font(size: int):
-    for name in [
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
-    ]:
+    for name in _font_candidates_cn():
+        try:
+            return ImageFont.truetype(name, size)
+        except Exception:
+            continue
+    # Fallback: try English fonts (better than default bitmap for layout)
+    for name in _font_candidates_en():
         try:
             return ImageFont.truetype(name, size)
         except Exception:
@@ -82,10 +119,24 @@ def make_circle_avatar_from_image(path: Path, size=220):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--owner", default="林晓胜")
+    ap.add_argument("--owner", default="", help="owner display name (reads from state.json if omitted)")
     ap.add_argument("--avatar", default="", help="optional avatar image path (Gemini output etc.)")
     ap.add_argument("--qr", default="", help="optional QR PNG path (default: data/my-lobster-qr.png)")
     args = ap.parse_args()
+
+    # Resolve owner name: CLI arg > state.json lobster name > error
+    owner = args.owner
+    if not owner:
+        state_file = DATA / "state.json"
+        if state_file.exists():
+            import json
+            try:
+                state = json.loads(state_file.read_text())
+                owner = (state.get("me") or {}).get("name", "")
+            except Exception:
+                pass
+    if not owner:
+        raise SystemExit("--owner is required (or init first so state.json has a name)")
 
     qr_path = Path(args.qr).expanduser() if args.qr else (DATA / "my-lobster-qr.png")
     out = DATA / "my-lobster-qr-card.png"
@@ -117,7 +168,7 @@ def main():
         avatar = lobster_avatar(220)
     card.paste(avatar, ((card_w - 220) // 2, 82), avatar)
 
-    draw_center_text(draw, f"{args.owner} Lobster", 330, name_f, (70, 78, 92), card_w)
+    draw_center_text(draw, f"{owner}'s Lobster", 330, name_f, (70, 78, 92), card_w)
 
     # centered panel with shadow
     panel_w, panel_h = 820, 960

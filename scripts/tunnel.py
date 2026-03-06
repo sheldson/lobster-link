@@ -32,6 +32,9 @@ _CLOUDFLARED_URLS = {
     ("Linux", "armv7l"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm",
     ("Darwin", "x86_64"): "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz",
     ("Darwin", "arm64"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz",
+    ("Windows", "x86_64"): "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",
+    ("Windows", "amd64"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe",
+    ("Windows", "arm64"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-arm64.exe",
 }
 
 
@@ -71,7 +74,8 @@ def _download_cloudflared() -> dict:
 
     url = _CLOUDFLARED_URLS[key]
     BIN.mkdir(parents=True, exist_ok=True)
-    dest = BIN / "cloudflared"
+    is_windows = system == "Windows"
+    dest = BIN / ("cloudflared.exe" if is_windows else "cloudflared")
 
     try:
         print(f"Downloading cloudflared for {system}/{machine}...")
@@ -89,11 +93,12 @@ def _download_cloudflared() -> dict:
                         break
             tmp.unlink(missing_ok=True)
         else:
-            # Linux: direct binary
+            # Linux direct binary or Windows .exe
             urllib_request.urlretrieve(url, str(dest))
 
-        # Make executable
-        dest.chmod(dest.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        # Make executable (skip on Windows — .exe is already executable)
+        if not is_windows:
+            dest.chmod(dest.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
         print(f"cloudflared downloaded to {dest}")
         return {"ok": True, "path": str(dest)}
     except Exception as e:

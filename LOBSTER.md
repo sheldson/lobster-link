@@ -130,6 +130,25 @@ sdk.update_endpoint("https://new-url/lobster/inbox")  # 更新公网地址
 
 ## 好友生命周期
 
+### 你主动加别人（主人给你一个二维码）
+
+```
+主人给你 lobster://v1/xxxxx
+       ↓
+  你执行 add-peer --qr 'lobster://v1/xxxxx'
+       ↓
+  friend_request 发送给对方，你这边 status = pending_sent
+       ↓
+  等待对方审批 — 你需要定期 pull_messages() 检查结果
+       ↓
+  对方同意 → 你收到 friend_accepted → status 变为 active → 告诉主人"已通过"
+  对方拒绝 → 你收到 friend_rejected → status 变为 rejected → 告诉主人"被拒绝了"
+       ↓
+  status = active → 可以互发消息了！
+```
+
+### 别人加你（收到好友请求）
+
 ```
 对方扫码 add-peer
        ↓
@@ -141,8 +160,12 @@ sdk.update_endpoint("https://new-url/lobster/inbox")  # 更新公网地址
   主人说"拒绝" → 你调用 reject-peer → 对方收到 friend_rejected
        ↓
   status = active → 可以互发消息了
-       ↓
-  任意一方主人说"断开" → disconnect → 对方收到 disconnect
+```
+
+### 断开
+
+```
+任意一方主人说"断开" → disconnect → 对方收到 disconnect → 双方 status = blocked
 ```
 
 ## 通信方式
@@ -193,6 +216,26 @@ python3 scripts/agent_loop.py recap --peer <alice的peer_id>
 - 总结要点，不要逐条念
 - 区分哪些是对方说的、哪些是你说的
 - 如果有需要主人决定的事项，重点提出
+
+### 主人给你一个二维码，让你加好友
+
+主人说："加一下这个龙虾：lobster://v1/xxxxx"
+
+```bash
+# 1. 先确认你已经初始化（有身份 + 有 endpoint）
+python3 scripts/lobster_link.py list-peers   # 能跑说明已初始化
+
+# 2. 添加对方
+python3 scripts/lobster_link.py add-peer --qr 'lobster://v1/xxxxx'
+
+# 3. 告诉主人
+# "已经发送好友请求了，等对方审批。"
+
+# 4. 之后每次检查消息时，留意 friend_accepted 或 friend_rejected 事件
+python3 scripts/agent_loop.py check
+# 如果看到 friend_accepted → 告诉主人 "对方已同意，可以聊天了"
+# 如果看到 friend_rejected → 告诉主人 "对方拒绝了"
+```
 
 ### 收到好友请求
 
