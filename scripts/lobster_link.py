@@ -7,6 +7,7 @@ import os
 import stat
 import sys
 import uuid
+from types import SimpleNamespace
 from pathlib import Path
 from urllib import request, parse
 
@@ -485,6 +486,61 @@ def cmd_list_peers(_args):
     return 0
 
 
+def cmd_onboard_from_qr(args):
+    """Cold-start onboarding: init local lobster (if needed), then add peer from QR."""
+    s = load_state()
+    me = s.get("me")
+
+    if not me:
+        init_args = SimpleNamespace(
+            name=args.name,
+            endpoint=args.endpoint,
+            repo_url=args.repo_url,
+            install_hint=args.install_hint,
+            port=args.port,
+            force=args.force_init,
+        )
+        rc = cmd_init(init_args)
+        if isinstance(rc, int) and rc != 0:
+            return rc
+        s = load_state()
+        me = s.get("me")
+
+    if not me:
+        print(json.dumps({"ok": False, "error": "init_failed", "next_step": "Run init manually and retry onboard-from-qr"}, ensure_ascii=False))
+        return 2
+
+    if not me.get("endpoint"):
+        print(json.dumps({"ok": False, "error": "no_public_endpoint", "next_step": "Run: python3 scripts/lobster_link.py tunnel start --port 8787"}, ensure_ascii=False))
+        return 2
+
+    peer_payload = decode_qr_input(args.qr)
+    peer_id = peer_payload.get("lobster_id", "")
+    if not peer_id:
+        print(json.dumps({"ok": False, "error": "invalid_qr", "next_step": "Provide a valid lobster:// token"}, ensure_ascii=False))
+        return 2
+
+    if peer_id == me.get("lobster_id"):
+        print(json.dumps({"ok": False, "error": "cannot_add_self"}, ensure_ascii=False))
+        return 2
+
+    if peer_id in s.get("peers", {}):
+        existing = s["peers"][peer_id]
+        print(json.dumps({
+            "ok": True,
+            "already_added": True,
+            "peer": existing,
+            "bootstrap": {
+                "repo_url": peer_payload.get("repo_url"),
+                "install_hint": peer_payload.get("install_hint"),
+            },
+        }, ensure_ascii=False))
+        return 0
+
+    add_args = SimpleNamespace(qr=args.qr, label=args.label)
+    return cmd_add_peer(add_args)
+
+
 def cmd_start_inbox(args):
     """Start the local inbox server (blocking)."""
     from inbox_server import main as inbox_main
@@ -589,6 +645,17 @@ def main():
 
     p = sub.add_parser("list-peers")
     p.set_defaults(fn=cmd_list_peers)
+
+    p = sub.add_parser("onboard-from-qr", help="Cold-start onboarding from a peer QR token")
+    p.add_argument("--qr", required=True, help="Peer QR token: lobster://v1/...")
+    p.add_argument("--name", default="my-lobster", help="Your lobster name (used if not initialized)")
+    p.add_argument("--label", default="", help="Optional local label for peer")
+    p.add_argument("--endpoint", default="", help="Optional fixed endpoint (skip tunnel setup)")
+    p.add_argument("--repo-url", default="https://github.com/sheldson/lobster-chat")
+    p.add_argument("--install-hint", default="git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh")
+    p.add_argument("--port", type=int, default=8787)
+    p.add_argument("--force-init", action="store_true")
+    p.set_defaults(fn=cmd_onboard_from_qr)
 
     p = sub.add_parser("start-inbox", help="Start the local inbox server")
     p.add_argument("--host", default="127.0.0.1")

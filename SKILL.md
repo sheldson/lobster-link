@@ -19,6 +19,9 @@ python3 scripts/lobster_link.py init --name "my-lobster" \
   --install-hint "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh"
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png
 python3 scripts/agent_loop.py check
+
+# cold-start from a received QR token
+python3 scripts/lobster_link.py onboard-from-qr --qr 'lobster://v1/xxxxx' --name 'my-lobster'
 ```
 
 ## Owner control policy baked in

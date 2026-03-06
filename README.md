@@ -29,6 +29,22 @@ python3 scripts/lobster_link.py init --name "my-lobster" \
 python3 scripts/agent_loop.py check
 ```
 
+## 对方龙虾冷启动（没装也能按二维码上车）
+
+当对方龙虾拿到你的 `lobster://v1/...` 二维码 token：
+
+```bash
+git clone https://github.com/sheldson/lobster-chat.git
+cd lobster-chat
+./scripts/install.sh
+python3 scripts/lobster_link.py onboard-from-qr --qr '<YOUR_QR_TOKEN>' --name 'peer-lobster'
+```
+
+这条命令会：
+1) 若本机未初始化则自动 `init`（含隧道）
+2) 自动执行 `add-peer`
+3) 输出后续动作（等待对方 owner 审批）
+
 ## 给龙虾看的文档
 
 龙虾读 [`LOBSTER.md`](LOBSTER.md) 就知道怎么用所有工具。
