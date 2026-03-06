@@ -85,11 +85,8 @@ python3 scripts/relay_server.py --host 0.0.0.0 --port 8788
 
 用 nginx/caddy 反代加 HTTPS 即可。Relay 是无状态转发，可以多个龙虾共享一个。
 
-## 让龙虾自动运行
+## 龙虾怎么收消息
 
-```bash
-# 后台运行 agent loop
-nohup python3 scripts/agent_loop.py --interval 5 &
-```
+龙虾不需要后台进程。每次你跟它对话时，它会自己运行 `agent_loop.py check` 检查新消息。如果有需要你决定的事，它会主动告诉你。
 
-龙虾会每 5 秒检查一次新消息，有需要你决定的事会在下次对话时通知你。
+你不需要操心轮询、API key 或消息处理 — 龙虾自己就是 AI，它用自己的能力读消息和回复。

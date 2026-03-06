@@ -1,175 +1,144 @@
 #!/usr/bin/env python3
 """
-Lobster Agent Loop — the main runtime for an AI lobster.
+Lobster Check — a lightweight helper the lobster (AI agent) can run to check
+for new messages. This is NOT an autonomous loop that replaces the lobster's
+own reasoning — the lobster IS the LLM, it doesn't need another one.
 
-This script is the "brain" of the lobster. It:
-1. Polls for new messages from relay
-2. Classifies each message / event
-3. Handles what it can autonomously
-4. Escalates to owner what it cannot
+Usage by the lobster:
+    # Check for new messages (single poll, returns structured JSON)
+    python3 scripts/agent_loop.py check
 
-Usage:
-    python3 scripts/agent_loop.py --once          # single poll cycle
-    python3 scripts/agent_loop.py --interval 5    # continuous polling
+    # Summarize recent activity with a specific peer
+    python3 scripts/agent_loop.py recap --peer <peer_id> --limit 20
 
-The actual AI reasoning (LLM calls) is stubbed as handle_* hooks.
-Integrate your own LLM (Claude, GPT, etc.) by replacing these hooks.
+    # Show what needs owner attention right now
+    python3 scripts/agent_loop.py pending
+
+The lobster reads the output, thinks with its own brain, and decides
+what to do next (reply, ask owner, ignore, etc.).
 """
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 
-# Add scripts dir to path so we can import the SDK
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import lobster_sdk as sdk
 
 
-# ---------------------------------------------------------------------------
-# Event / message handlers — replace these with your LLM integration
-# ---------------------------------------------------------------------------
-
-def handle_friend_request(event: dict) -> str:
-    """A new lobster wants to be friends.
-    Returns: 'escalate' (ask owner), 'approve', or 'reject'.
-    Default: always escalate to owner."""
-    print(f"[ESCALATE] Friend request from '{event['name']}' ({event['from']})")
-    print(f"  → This needs owner approval. Run:")
-    print(f"    python3 scripts/lobster_link.py approve-peer --peer {event['from']}")
-    print(f"    python3 scripts/lobster_link.py reject-peer --peer {event['from']}")
-    return "escalate"
-
-
-def handle_friend_accepted(event: dict):
-    """Our friend request was accepted."""
-    print(f"[INFO] Friend request accepted by {event['from']}")
-
-
-def handle_friend_rejected(event: dict):
-    """Our friend request was rejected."""
-    print(f"[INFO] Friend request rejected by {event['from']}")
-
-
-def handle_peer_disconnected(event: dict):
-    """A peer disconnected from us."""
-    print(f"[INFO] Peer {event['from']} disconnected")
-
-
-def handle_incoming_message(msg: dict) -> dict | None:
-    """An active peer sent us a message.
-    This is where your LLM reads the message, thinks, and optionally replies.
-
-    Returns:
-        None            — no reply needed
-        {"text": "..."} — auto-reply with this text
-        "escalate"      — flag for owner attention
-
-    Default implementation: log and return None (no auto-reply).
-    Replace this with your LLM call.
-    """
-    frm = msg.get("from", "?")
-    intent = msg.get("intent", "?")
-    text = msg.get("body", {}).get("text", "")
-    print(f"[MSG] from={frm} intent={intent} text={text[:200]}")
-    # TODO: Replace with LLM call, e.g.:
-    #   response = call_llm(f"You received a message: {text}. How do you respond?")
-    #   return {"text": response}
-    return None
-
-
-def handle_share_request_received(msg: dict):
-    """A peer wants to share a skill/code with us."""
-    body = msg.get("body", {})
-    print(f"[SHARE] from={msg.get('from')} kind={body.get('kind')} title={body.get('title')}")
-    print(f"  → Escalating to owner for review.")
-    return "escalate"
-
-
-# ---------------------------------------------------------------------------
-# Core loop
-# ---------------------------------------------------------------------------
-
-# Intents that the agent can handle without owner approval
-AUTONOMOUS_INTENTS = {"ask", "reply", "status"}
-
-# Intents that require owner escalation
-ESCALATE_INTENTS = {"share_request", "share_approved", "share_rejected"}
-
-
-def process_cycle():
-    """Run one poll-and-process cycle. Returns number of messages handled."""
+def cmd_check(_args):
+    """Pull new messages and return a structured summary for the lobster to read."""
     result = sdk.pull_messages()
     if not result["ok"]:
-        print(f"[ERROR] pull failed: {result.get('error')}")
-        return 0
+        print(json.dumps({"ok": False, "error": result.get("error")}, ensure_ascii=False))
+        return
 
-    # 1. Handle protocol events (friend requests, accepts, disconnects)
-    for event in result.get("events", []):
-        etype = event.get("event", "")
-        if etype == "friend_request_received":
-            handle_friend_request(event)
-        elif etype == "friend_accepted":
-            handle_friend_accepted(event)
-        elif etype == "friend_rejected":
-            handle_friend_rejected(event)
-        elif etype == "peer_disconnected":
-            handle_peer_disconnected(event)
+    events = result.get("events", [])
+    messages = result.get("messages", [])
 
-    # 2. Handle content messages from active peers
-    for msg in result.get("messages", []):
+    # Separate protocol events from content messages
+    content_msgs = []
+    for msg in messages:
         intent = msg.get("intent", "")
-        frm = msg.get("from", "")
-
-        # Skip protocol messages (already handled above)
         if intent in ("friend_request", "friend_accepted", "friend_rejected", "disconnect"):
-            continue
+            continue  # already captured in events
+        content_msgs.append({
+            "from": msg.get("from"),
+            "intent": msg.get("intent"),
+            "text": msg.get("body", {}).get("text", ""),
+            "ts": msg.get("ts"),
+            "id": msg.get("id"),
+        })
 
-        # Check if peer is active
-        peers = sdk.list_peers().get("peers", {})
-        peer = peers.get(frm)
-        if not peer or peer.get("status") != "active":
-            continue
+    # What needs owner attention?
+    needs_owner = []
+    for ev in events:
+        if ev.get("event") == "friend_request_received":
+            needs_owner.append({
+                "type": "friend_request",
+                "from": ev["from"],
+                "name": ev.get("name", ""),
+                "action": "ask owner to approve or reject",
+            })
 
-        if intent in ESCALATE_INTENTS:
-            handle_share_request_received(msg)
-            continue
+    output = {
+        "ok": True,
+        "new_messages": content_msgs,
+        "events": events,
+        "needs_owner_attention": needs_owner,
+        "total_pulled": result.get("count", 0),
+    }
+    print(json.dumps(output, ensure_ascii=False, indent=2))
 
-        # Normal message — let the agent handle it
-        reply = handle_incoming_message(msg)
-        if reply and isinstance(reply, dict) and reply.get("text"):
-            sdk.send_message(to=frm, text=reply["text"], intent="reply")
-            print(f"[REPLY] to={frm} text={reply['text'][:100]}")
 
-    return result.get("count", 0)
+def cmd_recap(args):
+    """Show recent conversation with a peer, for the lobster to summarize to owner."""
+    result = sdk.get_conversation_history(peer_id=args.peer, limit=args.limit)
+    if not result["ok"]:
+        print(json.dumps(result, ensure_ascii=False))
+        return
+
+    # Format for easy reading by the lobster
+    lines = []
+    for msg in result["messages"]:
+        direction = msg.get("_direction", "?")
+        intent = msg.get("intent", "")
+        text = msg.get("body", {}).get("text", "")
+        ts = msg.get("ts", "")
+        if direction == "sent":
+            lines.append({"role": "me", "intent": intent, "text": text, "ts": ts})
+        else:
+            lines.append({"role": "peer", "intent": intent, "text": text, "ts": ts})
+
+    print(json.dumps({"ok": True, "peer": args.peer, "conversation": lines}, ensure_ascii=False, indent=2))
+
+
+def cmd_pending(_args):
+    """Show everything that needs owner attention."""
+    items = []
+
+    # Pending friend requests
+    pr = sdk.get_pending_requests()
+    for p in pr.get("pending", []):
+        items.append({
+            "type": "friend_request",
+            "from": p["lobster_id"],
+            "name": p.get("name", ""),
+            "created_at": p.get("created_at", ""),
+            "action_needed": "owner must approve or reject",
+        })
+
+    # Pending share requests
+    sdk._ensure_files()
+    pending_shares = json.loads(sdk.PENDING.read_text())
+    for r in pending_shares.get("requests", []):
+        if r.get("status") == "awaiting_owner_approval":
+            items.append({
+                "type": "share_request",
+                "request_id": r["request_id"],
+                "to": r["to"],
+                "kind": r.get("kind"),
+                "title": r.get("title"),
+                "action_needed": "owner must approve or reject",
+            })
+
+    print(json.dumps({"ok": True, "pending_items": items, "count": len(items)}, ensure_ascii=False, indent=2))
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Lobster agent loop")
-    ap.add_argument("--once", action="store_true", help="Run one cycle and exit")
-    ap.add_argument("--interval", type=int, default=5, help="Seconds between poll cycles (default: 5)")
+    ap = argparse.ArgumentParser(description="Lobster message helper")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("check", help="Pull new messages and show structured summary")
+
+    p = sub.add_parser("recap", help="Show recent conversation with a peer")
+    p.add_argument("--peer", required=True)
+    p.add_argument("--limit", type=int, default=20)
+
+    sub.add_parser("pending", help="Show items needing owner attention")
+
     args = ap.parse_args()
-
-    identity = sdk.get_my_identity()
-    if not identity["ok"]:
-        print("[FATAL] Lobster not initialized. Run: python3 scripts/lobster_link.py init --name <name> --relay-url <url>")
-        sys.exit(1)
-
-    print(f"[START] Lobster '{identity['name']}' ({identity['lobster_id'][:8]}...) polling every {args.interval}s")
-
-    if args.once:
-        process_cycle()
-        return
-
-    while True:
-        try:
-            process_cycle()
-        except KeyboardInterrupt:
-            print("\n[STOP] Lobster agent stopped.")
-            break
-        except Exception as e:
-            print(f"[ERROR] {e}")
-        time.sleep(args.interval)
+    {"check": cmd_check, "recap": cmd_recap, "pending": cmd_pending}[args.cmd](args)
 
 
 if __name__ == "__main__":
