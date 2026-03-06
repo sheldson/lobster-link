@@ -184,12 +184,19 @@ def decode_qr_token(s: str) -> dict:
 # Public SDK functions — these are what the lobster agent calls
 # ---------------------------------------------------------------------------
 
-def init(name: str, endpoint: str = "", force: bool = False) -> dict:
-    """Initialize this lobster's identity.
+def init(name: str, endpoint: str = "", port: int = 8787, force: bool = False) -> dict:
+    """Initialize this lobster's identity, start inbox server, and open tunnel.
 
-    Each lobster runs inbox_server.py locally and exposes it via tunnel.
-    Pass --endpoint with your public URL, or use tunnel.py to auto-detect.
+    This does everything in one call:
+    1. Generate ed25519 identity
+    2. Start inbox_server.py in background
+    3. Auto-detect and start a tunnel (ngrok/cloudflared)
+    4. Save the public endpoint
+
+    If --endpoint is given, skips steps 2-3 (assumes you have your own setup).
     """
+    import subprocess as _sp
+
     s = _load_state()
     if s.get("me") and not force:
         return {"ok": False, "error": "already_initialized"}
@@ -208,12 +215,57 @@ def init(name: str, endpoint: str = "", force: bool = False) -> dict:
     s["me"] = me
     s["peers"] = {}
     _save_state(s)
-    return {
+
+    result = {
         "ok": True,
         "lobster_id": me["lobster_id"],
         "name": name,
         "endpoint": endpoint,
     }
+
+    if endpoint:
+        result["setup"] = "endpoint_provided"
+        return result
+
+    # Auto-setup: start inbox server + tunnel
+    import sys as _sys
+    inbox_proc = _sp.Popen(
+        [_sys.executable, str(ROOT / "scripts" / "inbox_server.py"), "--port", str(port)],
+        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+    )
+    result["inbox_server"] = {"pid": inbox_proc.pid, "port": port}
+
+    try:
+        from tunnel import start_tunnel, detect_tunnel_tool, get_install_instructions
+        available = detect_tunnel_tool()["available"]
+        if available:
+            tunnel_result = start_tunnel(port=port)
+            if tunnel_result.get("ok"):
+                endpoint = tunnel_result["public_url"].rstrip("/") + "/lobster/inbox"
+                me["endpoint"] = endpoint
+                _save_state(s)
+                result["endpoint"] = endpoint
+                result["tunnel"] = {"tool": tunnel_result.get("tool"), "pid": tunnel_result.get("pid")}
+                result["setup"] = "auto_complete"
+            else:
+                result["tunnel_error"] = tunnel_result.get("error")
+                result["setup"] = "tunnel_failed"
+                result["next_step"] = "Fix tunnel, then: update_endpoint('https://your-url/lobster/inbox')"
+        else:
+            result["setup"] = "no_tunnel_tool"
+            result["next_step"] = get_install_instructions()
+    except Exception as e:
+        result["setup"] = "tunnel_error"
+        result["tunnel_error"] = str(e)
+        result["next_step"] = "Install ngrok or cloudflared, then call update_endpoint()"
+
+    if me.get("endpoint"):
+        result["qr_token"] = encode_qr_token({
+            "v": 1, "lobster_id": me["lobster_id"], "name": name,
+            "endpoint": me["endpoint"], "verify_key": me["verify_key"],
+        })
+
+    return result
 
 
 def update_endpoint(endpoint: str) -> dict:

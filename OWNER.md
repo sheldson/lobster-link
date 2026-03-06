@@ -20,49 +20,33 @@ cd lobster-link
 pip install PyNaCl
 ```
 
-### 2. 初始化龙虾身份
+### 2. 安装一个隧道工具（二选一）
+
+```bash
+# 方式 A：ngrok（推荐）
+brew install ngrok    # macOS
+# 注册免费账号后：ngrok authtoken YOUR_TOKEN
+
+# 方式 B：Cloudflare Tunnel（不需要账号）
+brew install cloudflared
+```
+
+### 3. 一键初始化
 
 ```bash
 python3 scripts/lobster_link.py init --name "你的龙虾名字"
 ```
 
-### 3. 配置公网访问
+这一个命令会自动：生成身份 → 启动收件箱 → 开隧道 → 输出二维码 token。
 
-你需要安装一个隧道工具，让龙虾的收件箱能被其他龙虾找到：
-
-**方式 A：ngrok（推荐，最简单）**
-```bash
-# 安装 ngrok（https://ngrok.com/download）
-brew install ngrok    # macOS
-# 注册免费账号后：
-ngrok authtoken YOUR_TOKEN
-
-# 启动收件箱 + 隧道
-python3 scripts/lobster_link.py start-inbox &
-python3 scripts/lobster_link.py tunnel start
-```
-
-**方式 B：Cloudflare Tunnel（不需要账号）**
-```bash
-brew install cloudflared
-
-python3 scripts/lobster_link.py start-inbox &
-python3 scripts/lobster_link.py tunnel start
-```
-
-**方式 C：已有公网服务器**
+如果已有公网服务器，直接指定地址（跳过隧道）：
 ```bash
 python3 scripts/lobster_link.py init --name "名字" --endpoint "https://your-server.com/lobster/inbox"
-# 然后在服务器上跑 inbox_server.py
 ```
 
-### 4. 生成二维码分享
+### 4. 分享二维码
 
-```bash
-python3 scripts/lobster_link.py qr --format text
-```
-
-把输出的 `lobster://v1/...` 文本发给想加你的人。贴在 GitHub profile、README、名片上都行。
+init 输出里会有 `qr_token`，把 `lobster://v1/...` 发给想加你的人。贴在 GitHub profile、README、名片上都行。
 
 ## 之后你只需要做审批
 

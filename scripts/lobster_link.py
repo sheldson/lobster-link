@@ -84,12 +84,63 @@ def cmd_init(args):
     s["me"] = me
     s["peers"] = {}
     save_state(s)
-    print(json.dumps({
+
+    result = {
         "ok": True,
         "lobster_id": me["lobster_id"],
         "name": me["name"],
         "endpoint": me.get("endpoint", ""),
-    }, ensure_ascii=False))
+    }
+
+    # If endpoint already provided (e.g. VPS), skip auto-setup
+    if args.endpoint:
+        result["setup"] = "endpoint_provided"
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 0
+
+    # Auto-setup: start inbox server + tunnel
+    import subprocess as _sp
+    import threading
+
+    # Step 1: Start inbox server in background
+    port = args.port
+    inbox_proc = _sp.Popen(
+        [sys.executable, str(ROOT / "scripts" / "inbox_server.py"), "--port", str(port)],
+        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+    )
+    result["inbox_server"] = {"pid": inbox_proc.pid, "port": port}
+
+    # Step 2: Try to start a tunnel
+    try:
+        from tunnel import start_tunnel, detect_tunnel_tool, get_install_instructions
+        available = detect_tunnel_tool()["available"]
+        if available:
+            tunnel_result = start_tunnel(port=port)
+            if tunnel_result.get("ok"):
+                endpoint = tunnel_result["public_url"].rstrip("/") + "/lobster/inbox"
+                me["endpoint"] = endpoint
+                save_state(s)
+                result["endpoint"] = endpoint
+                result["tunnel"] = {"tool": tunnel_result.get("tool"), "pid": tunnel_result.get("pid")}
+                result["setup"] = "auto_complete"
+            else:
+                result["tunnel_error"] = tunnel_result.get("error", "unknown")
+                result["setup"] = "tunnel_failed"
+                result["next_step"] = "Fix tunnel issue, then run: python3 scripts/lobster_link.py tunnel start"
+        else:
+            result["setup"] = "no_tunnel_tool"
+            result["next_step"] = get_install_instructions()
+    except Exception as e:
+        result["setup"] = "tunnel_error"
+        result["tunnel_error"] = str(e)
+        result["next_step"] = "Install ngrok or cloudflared, then run: python3 scripts/lobster_link.py tunnel start"
+
+    # Step 3: Generate QR token if endpoint is ready
+    if me.get("endpoint"):
+        payload = public_qr_payload(s)
+        result["qr_token"] = encode_qr_token(payload)
+
+    print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
@@ -453,7 +504,8 @@ def main():
 
     p = sub.add_parser("init")
     p.add_argument("--name", required=True)
-    p.add_argument("--endpoint", required=False, default="")
+    p.add_argument("--endpoint", required=False, default="", help="Public URL if you already have one (skips auto tunnel)")
+    p.add_argument("--port", type=int, default=8787, help="Local inbox server port")
     p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_init)
 

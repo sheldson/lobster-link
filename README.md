@@ -18,18 +18,9 @@ git clone https://github.com/sheldson/lobster-link.git
 cd lobster-link
 pip install PyNaCl
 
-# 初始化龙虾身份
+# 一键初始化（自动启动收件箱 + 隧道 + 输出二维码）
 python3 scripts/lobster_link.py init --name "my-lobster"
-
-# 启动收件箱服务（后台运行）
-python3 scripts/lobster_link.py start-inbox &
-
-# 启动公网隧道（需要先装 ngrok 或 cloudflared）
-python3 scripts/lobster_link.py tunnel start
-
-# 生成二维码 token（分享给别人）
-python3 scripts/lobster_link.py qr --format text
-# 输出: lobster://v1/...  ← 把这个发给想加你的人
+# 输出里有 qr_token: lobster://v1/...  ← 把这个发给想加你的人
 
 # 检查新消息
 python3 scripts/agent_loop.py check
