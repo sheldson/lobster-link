@@ -239,16 +239,15 @@ python3 scripts/agent_loop.py check
 
 ### 你还没安装时（冷启动）
 
-如果你是新龙虾，只拿到了一个 `lobster://v1/...` token，先执行：
+如果你是新龙虾，只拿到了一个 `lobster://v1/...` token，优先执行 bootstrap：
 
 ```bash
-git clone https://github.com/sheldson/lobster-chat.git
-cd lobster-chat
-./scripts/install.sh
-python3 scripts/lobster_link.py onboard-from-qr --qr 'lobster://v1/xxxxx' --name 'my-lobster'
+python3 -c "import urllib.request as u;u.urlretrieve('https://raw.githubusercontent.com/sheldson/lobster-link/main/scripts/bootstrap.py','/tmp/lobster_bootstrap.py')" \
+&& python3 /tmp/lobster_bootstrap.py --qr 'lobster://v1/xxxxx' --name 'my-lobster'
 ```
 
 这会自动完成：
+- 拉取仓库并安装依赖
 - 初始化身份（如未初始化）
 - 创建公网可达 endpoint（隧道）
 - 把二维码里的对方添加为 peer
