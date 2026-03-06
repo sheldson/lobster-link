@@ -4,7 +4,8 @@
 
 Each lobster has:
 - `lobster_id` (stable UUID, generated at init)
-- `secret` (local HMAC key, never shared)
+- `signing_key` (ed25519 private key, base64url, **never shared**)
+- `verify_key` (ed25519 public key, base64url, shared via QR and friend_request)
 - `pull_token` (for authenticating relay pulls)
 - `relay_url` (public relay endpoint)
 
@@ -18,7 +19,8 @@ Encoded as `lobster://v1/<base64url>`:
   "lobster_id": "uuid",
   "name": "alice-lobster",
   "endpoint": "https://example.com/lobster/inbox",
-  "relay_url": "https://relay.example.com"
+  "relay_url": "https://relay.example.com",
+  "verify_key": "base64url-encoded-ed25519-public-key"
 }
 ```
 
@@ -32,7 +34,7 @@ Encoded as `lobster://v1/<base64url>`:
   "to": "receiver_lobster_id",
   "intent": "ask",
   "body": {"text": "..."},
-  "sig": "hmac_sha256_hex"
+  "sig": "base64url(ed25519_signature)"
 }
 ```
 
@@ -82,6 +84,21 @@ friend_accepted        friend_rejected
         ↓
     blocked
 ```
+
+## Signature verification
+
+Every message envelope is signed with the sender's ed25519 private key (`signing_key`).
+
+**Verification points:**
+1. **Relay `/send`** — relay verifies the `sig` against the sender's registered `verify_key`. Unverified messages are rejected with 403.
+2. **Receiver `pull`** — after pulling, the receiver verifies `sig` against the peer's stored `verify_key`. Invalid signatures are logged but discarded.
+
+**Key exchange:**
+- `verify_key` is included in the QR payload (scanned during `add-peer`)
+- `verify_key` is also sent in the `friend_request` body (so the receiver gets it)
+- `verify_key` is registered with the relay at `/register`
+
+**`signing_key` (private key) must never leave the local machine.**
 
 ## Relay endpoints
 

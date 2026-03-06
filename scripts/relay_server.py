@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+
+from nacl.signing import VerifyKey
+from nacl.exceptions import BadSignatureError
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -22,6 +26,33 @@ def load():
 
 def save(db):
     RELAY.write_text(json.dumps(db, ensure_ascii=False, indent=2))
+
+
+def verify_envelope_sig(db, env):
+    """Verify that the envelope's sig matches the registered sender's verify_key.
+    Returns (ok: bool, error: str|None)."""
+    frm = env.get("from", "")
+    sig_b64 = env.get("sig", "")
+    if not frm or not sig_b64:
+        return False, "missing_from_or_sig"
+
+    client = db["clients"].get(frm)
+    if not client or not client.get("verify_key"):
+        # Sender not registered — cannot verify. Reject.
+        return False, "sender_not_registered"
+
+    vk_b64 = client["verify_key"]
+    try:
+        vk_bytes = base64.urlsafe_b64decode(vk_b64)
+        vk = VerifyKey(vk_bytes)
+        sig = base64.urlsafe_b64decode(sig_b64)
+        # Verify against payload without sig field
+        payload = {k: v for k, v in env.items() if k != "sig"}
+        msg = json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        vk.verify(msg, sig)
+        return True, None
+    except (BadSignatureError, Exception) as e:
+        return False, f"invalid_signature: {e}"
 
 
 class H(BaseHTTPRequestHandler):
@@ -48,7 +79,12 @@ class H(BaseHTTPRequestHandler):
             if not lid:
                 return self._json(400, {"ok": False, "error": "missing_lobster_id"})
             pull_token = body.get("pull_token", "")
-            db["clients"][lid] = {"name": body.get("name", ""), "pull_token": pull_token}
+            verify_key = body.get("verify_key", "")
+            db["clients"][lid] = {
+                "name": body.get("name", ""),
+                "pull_token": pull_token,
+                "verify_key": verify_key,
+            }
             db["queues"].setdefault(lid, [])
             save(db)
             return self._json(200, {"ok": True})
@@ -58,6 +94,12 @@ class H(BaseHTTPRequestHandler):
             to = env.get("to")
             if not to:
                 return self._json(400, {"ok": False, "error": "missing_to"})
+
+            # Verify sender's signature
+            ok, err = verify_envelope_sig(db, env)
+            if not ok:
+                return self._json(403, {"ok": False, "error": err})
+
             queue = db["queues"].setdefault(to, [])
             if len(queue) >= MAX_QUEUE_LEN:
                 return self._json(429, {"ok": False, "error": "queue_full"})

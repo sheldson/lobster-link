@@ -5,13 +5,15 @@ Lobster Link SDK — importable Python API for AI agents.
 This module wraps the CLI into clean functions that return dicts (never print/exit).
 An AI agent imports this module and calls functions directly.
 """
+import base64
 import datetime as dt
-import hashlib
-import hmac
 import json
 import uuid
 from pathlib import Path
 from urllib import request, parse
+
+from nacl.signing import SigningKey, VerifyKey
+from nacl.exceptions import BadSignatureError
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -55,9 +57,26 @@ def _append_jsonl(path, obj):
         f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 
-def _sign(secret, payload_obj):
+def _sign_ed25519(signing_key_b64: str, payload_obj: dict) -> str:
+    """Sign payload with ed25519 private key. Returns base64url signature."""
+    sk_bytes = base64.urlsafe_b64decode(signing_key_b64)
+    sk = SigningKey(sk_bytes)
     msg = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    return hmac.new(secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    signed = sk.sign(msg)
+    return base64.urlsafe_b64encode(signed.signature).decode("utf-8")
+
+
+def _verify_ed25519(verify_key_b64: str, payload_obj: dict, sig_b64: str) -> bool:
+    """Verify an ed25519 signature. Returns True if valid."""
+    try:
+        vk_bytes = base64.urlsafe_b64decode(verify_key_b64)
+        vk = VerifyKey(vk_bytes)
+        sig = base64.urlsafe_b64decode(sig_b64)
+        msg = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        vk.verify(msg, sig)
+        return True
+    except (BadSignatureError, Exception):
+        return False
 
 
 def _post_json(url, payload):
@@ -84,7 +103,7 @@ def _build_envelope(s, to, intent, body):
         "intent": intent,
         "body": body,
     }
-    payload["sig"] = _sign(me["secret"], payload)
+    payload["sig"] = _sign_ed25519(me["signing_key"], payload)
     return payload
 
 
@@ -101,7 +120,12 @@ def _register_relay(me):
     if not me.get("relay_url"):
         return
     url = me["relay_url"].rstrip("/") + "/register"
-    _post_json(url, {"lobster_id": me["lobster_id"], "name": me["name"], "pull_token": me.get("pull_token", "")})
+    _post_json(url, {
+        "lobster_id": me["lobster_id"],
+        "name": me["name"],
+        "pull_token": me.get("pull_token", ""),
+        "verify_key": me.get("verify_key", ""),
+    })
 
 
 def _process_protocol_message(s, msg):
@@ -118,6 +142,7 @@ def _process_protocol_message(s, msg):
             "name": body.get("name", "unknown"),
             "endpoint": body.get("endpoint", ""),
             "relay_url": body.get("relay_url", ""),
+            "verify_key": body.get("verify_key", ""),
             "status": "pending_received",
             "created_at": _now_iso(),
         }
@@ -184,14 +209,18 @@ def init(name: str, relay_url: str = "", endpoint: str = "", force: bool = False
     s = _load_state()
     if s.get("me") and not force:
         return {"ok": False, "error": "already_initialized"}
-    secret = uuid.uuid4().hex + uuid.uuid4().hex
+    # Generate ed25519 keypair
+    sk = SigningKey.generate()
+    signing_key_b64 = base64.urlsafe_b64encode(bytes(sk)).decode("utf-8")
+    verify_key_b64 = base64.urlsafe_b64encode(bytes(sk.verify_key)).decode("utf-8")
     pull_token = uuid.uuid4().hex
     me = {
         "lobster_id": str(uuid.uuid4()),
         "name": name,
         "endpoint": endpoint,
         "relay_url": relay_url,
-        "secret": secret,
+        "signing_key": signing_key_b64,
+        "verify_key": verify_key_b64,
         "pull_token": pull_token,
         "created_at": _now_iso(),
     }
@@ -232,6 +261,7 @@ def get_qr_token() -> dict:
         "name": me["name"],
         "endpoint": me.get("endpoint"),
         "relay_url": me.get("relay_url"),
+        "verify_key": me["verify_key"],
     }
     token = encode_qr_token(payload)
     return {"ok": True, "qr_token": token, "payload": payload}
@@ -256,6 +286,7 @@ def add_peer(qr_input: str, label: str = "") -> dict:
         "name": p.get("name", label or "peer"),
         "endpoint": p.get("endpoint"),
         "relay_url": p.get("relay_url"),
+        "verify_key": p.get("verify_key", ""),
         "status": "pending_sent",
         "created_at": _now_iso(),
     }
@@ -265,6 +296,7 @@ def add_peer(qr_input: str, label: str = "") -> dict:
         "name": me["name"],
         "relay_url": me.get("relay_url", ""),
         "endpoint": me.get("endpoint", ""),
+        "verify_key": me["verify_key"],
     })
     _append_jsonl(OUTBOX, env)
     try:
@@ -343,12 +375,32 @@ def pull_messages() -> dict:
         return {"ok": False, "error": str(e)}
     msgs = resp.get("messages", [])
     events = []
+    verified_msgs = []
     for m in msgs:
+        # Verify signature if we have the sender's verify_key
+        frm = m.get("from", "")
+        sig = m.pop("sig", "")
+        peer = s["peers"].get(frm)
+        vk = peer.get("verify_key", "") if peer else ""
+        # For friend_request, verify_key comes in the body
+        if m.get("intent") == "friend_request" and not vk:
+            vk = m.get("body", {}).get("verify_key", "")
+        if vk and sig:
+            if not _verify_ed25519(vk, m, sig):
+                # Signature invalid — skip this message
+                m["sig"] = sig  # restore for logging
+                m["_sig_valid"] = False
+                _append_jsonl(INBOX, m)
+                events.append({"event": "sig_invalid", "from": frm, "message_id": m.get("id")})
+                continue
+        m["sig"] = sig  # restore sig in message
+        m["_sig_valid"] = True if (vk and sig) else None
         _append_jsonl(INBOX, m)
         ev = _process_protocol_message(s, m)
         if ev:
             events.append(ev)
-    return {"ok": True, "messages": msgs, "events": events, "count": len(msgs)}
+        verified_msgs.append(m)
+    return {"ok": True, "messages": verified_msgs, "events": events, "count": len(msgs)}
 
 
 def list_peers() -> dict:

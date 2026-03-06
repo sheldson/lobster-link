@@ -2,13 +2,14 @@
 import argparse
 import base64
 import datetime as dt
-import hashlib
-import hmac
 import json
 import sys
 import uuid
 from pathlib import Path
 from urllib import request, parse
+
+from nacl.signing import SigningKey
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
@@ -48,9 +49,12 @@ def append_jsonl(path, obj):
         f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
 
-def sign(me_secret, payload_obj):
+def sign_ed25519(signing_key_b64, payload_obj):
+    sk_bytes = base64.urlsafe_b64decode(signing_key_b64)
+    sk = SigningKey(sk_bytes)
     msg = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    return hmac.new(me_secret.encode("utf-8"), msg, hashlib.sha256).hexdigest()
+    signed = sk.sign(msg)
+    return base64.urlsafe_b64encode(signed.signature).decode("utf-8")
 
 
 def post_json(url, payload):
@@ -71,7 +75,12 @@ def register_relay(me):
     if not me.get("relay_url"):
         return
     url = me["relay_url"].rstrip("/") + "/register"
-    post_json(url, {"lobster_id": me["lobster_id"], "name": me["name"], "pull_token": me.get("pull_token", "")})
+    post_json(url, {
+        "lobster_id": me["lobster_id"],
+        "name": me["name"],
+        "pull_token": me.get("pull_token", ""),
+        "verify_key": me.get("verify_key", ""),
+    })
 
 
 def cmd_init(args):
@@ -79,14 +88,17 @@ def cmd_init(args):
     if s.get("me") and not args.force:
         print("Already initialized. Use --force to reset.")
         return 1
-    secret = uuid.uuid4().hex + uuid.uuid4().hex
+    sk = SigningKey.generate()
+    signing_key_b64 = base64.urlsafe_b64encode(bytes(sk)).decode("utf-8")
+    verify_key_b64 = base64.urlsafe_b64encode(bytes(sk.verify_key)).decode("utf-8")
     pull_token = uuid.uuid4().hex
     me = {
         "lobster_id": str(uuid.uuid4()),
         "name": args.name,
         "endpoint": args.endpoint,
         "relay_url": args.relay_url,
-        "secret": secret,
+        "signing_key": signing_key_b64,
+        "verify_key": verify_key_b64,
         "pull_token": pull_token,
         "created_at": now_iso(),
     }
@@ -111,7 +123,7 @@ def public_qr_payload(s):
         "name": me["name"],
         "endpoint": me.get("endpoint"),
         "relay_url": me.get("relay_url"),
-        "public_key": "mvp-no-ed25519",
+        "verify_key": me.get("verify_key", ""),
     }
 
 
@@ -170,6 +182,7 @@ def cmd_add_peer(args):
         "name": p.get("name", args.label or "peer"),
         "endpoint": p.get("endpoint"),
         "relay_url": p.get("relay_url"),
+        "verify_key": p.get("verify_key", ""),
         "status": "pending_sent",
         "created_at": now_iso(),
     }
@@ -180,6 +193,7 @@ def cmd_add_peer(args):
         "name": me["name"],
         "relay_url": me.get("relay_url", ""),
         "endpoint": me.get("endpoint", ""),
+        "verify_key": me.get("verify_key", ""),
     })
     append_jsonl(OUTBOX, env)
     try:
@@ -244,7 +258,7 @@ def build_envelope(s, to, intent, body):
         "intent": intent,
         "body": body,
     }
-    payload["sig"] = sign(me["secret"], payload)
+    payload["sig"] = sign_ed25519(me["signing_key"], payload)
     return payload
 
 
@@ -287,6 +301,7 @@ def process_protocol_message(s, msg):
             "name": body.get("name", "unknown"),
             "endpoint": body.get("endpoint", ""),
             "relay_url": body.get("relay_url", ""),
+            "verify_key": body.get("verify_key", ""),
             "status": "pending_received",
             "created_at": now_iso(),
         }
