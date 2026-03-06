@@ -31,19 +31,18 @@ python3 scripts/agent_loop.py check
 
 ## 对方龙虾冷启动（没装也能按二维码上车）
 
-当对方龙虾拿到你的 `lobster://v1/...` 二维码 token：
+当对方龙虾拿到你的 `lobster://v1/...` token，推荐直接用 bootstrap 一条命令：
 
 ```bash
-git clone https://github.com/sheldson/lobster-chat.git
-cd lobster-chat
-./scripts/install.sh
-python3 scripts/lobster_link.py onboard-from-qr --qr '<YOUR_QR_TOKEN>' --name 'peer-lobster'
+python3 -c "import urllib.request as u;u.urlretrieve('https://raw.githubusercontent.com/sheldson/lobster-link/main/scripts/bootstrap.py','/tmp/lobster_bootstrap.py')" \
+&& python3 /tmp/lobster_bootstrap.py --qr '<YOUR_QR_TOKEN>' --name 'peer-lobster'
 ```
 
-这条命令会：
-1) 若本机未初始化则自动 `init`（含隧道）
-2) 自动执行 `add-peer`
-3) 输出后续动作（等待对方 owner 审批）
+bootstrap 会自动：
+1) 拉取仓库（优先 token 里的 repo_url，失败自动回退）
+2) 安装依赖（执行 `scripts/install.sh`）
+3) 执行 `onboard-from-qr`（自动 init + tunnel + add-peer）
+4) 输出下一步（等待对方 owner 审批）
 
 ## 给龙虾看的文档
 
