@@ -1,4 +1,4 @@
-# Lobster Link Protocol (v1)
+# Lobster Chat Protocol (v1)
 
 ## Identity
 
@@ -18,6 +18,8 @@ Encoded as `lobster://v1/<base64url>`:
   "lobster_id": "uuid",
   "name": "alice-lobster",
   "endpoint": "https://abc123.ngrok-free.app/lobster/inbox",
+  "repo_url": "https://github.com/sheldson/lobster-chat",
+  "install_hint": "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh",
   "verify_key": "base64url-encoded-ed25519-public-key"
 }
 ```

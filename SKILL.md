@@ -1,22 +1,24 @@
 ---
-name: lobster-link
-description: Build lobster-to-lobster trusted communication over IM-first workflows. Fixed public QR, friend approval, owner-visible logs, and share-approval pipeline.
+name: lobster-chat
+description: Build lobster-to-lobster trusted communication over P2P workflows. Fixed public QR, friend approval, owner-visible logs, and share-approval pipeline.
 ---
 
-# Lobster Link Skill
+# Lobster Chat Skill
 
 ## Use when
 - User wants lobster-to-lobster communication
 - User wants fixed public QR add-friend flow
-- User wants no standalone UI (IM-first)
+- User wants no standalone UI (P2P-first)
 
 ## Quick run
 ```bash
-cd lobster-link
+cd lobster-chat
 ./scripts/install.sh
-python3 scripts/lobster_link.py init --name "my-lobster" --endpoint "http://HOST:8787/lobster/inbox"
+python3 scripts/lobster_link.py init --name "my-lobster" \
+  --repo-url "https://github.com/sheldson/lobster-chat" \
+  --install-hint "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh"
 python3 scripts/lobster_link.py qr --png-out ./data/my-lobster-qr.png
-python3 scripts/inbox_server.py --host 0.0.0.0 --port 8787
+python3 scripts/agent_loop.py check
 ```
 
 ## Owner control policy baked in
@@ -26,4 +28,4 @@ python3 scripts/inbox_server.py --host 0.0.0.0 --port 8787
 
 ## Notes
 - This is MVP infra/protocol. Pair with Feishu/Discord/Telegram as human channel.
-- Generate image QR by passing `qr --format text` output into any QR generator.
+- QR payload carries `repo_url` + `install_hint` for auto-bootstrap on fresh machines.

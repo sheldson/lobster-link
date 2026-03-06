@@ -26,10 +26,12 @@ BIN = ROOT / "bin"
 # cloudflared download URLs by platform
 _CLOUDFLARED_URLS = {
     ("Linux", "x86_64"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
+    ("Linux", "amd64"):   "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64",
     ("Linux", "aarch64"): "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64",
+    ("Linux", "arm64"):   "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64",
     ("Linux", "armv7l"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm",
     ("Darwin", "x86_64"): "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz",
-    ("Darwin", "arm64"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz",
+    ("Darwin", "arm64"):  "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz",
 }
 
 
@@ -55,7 +57,13 @@ def detect_tunnel_tool() -> dict:
 def _download_cloudflared() -> dict:
     """Download cloudflared binary to bin/. Returns {"ok": True, "path": ...} or error."""
     system = platform.system()
-    machine = platform.machine()
+    machine = platform.machine().lower()
+    machine_alias = {
+        "x64": "x86_64",
+        "x86-64": "x86_64",
+        "armv8": "arm64",
+    }
+    machine = machine_alias.get(machine, machine)
     key = (system, machine)
 
     if key not in _CLOUDFLARED_URLS:
