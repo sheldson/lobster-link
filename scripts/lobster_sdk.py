@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Lobster Link SDK — importable Python API for AI agents.
+Lobster Chat SDK — importable Python API for AI agents.
 
 This module wraps the CLI into clean functions that return dicts (never print/exit).
 An AI agent imports this module and calls functions directly.
@@ -226,7 +226,14 @@ def decode_qr_token(s: str) -> dict:
 # Public SDK functions — these are what the lobster agent calls
 # ---------------------------------------------------------------------------
 
-def init(name: str, endpoint: str = "", port: int = 8787, force: bool = False) -> dict:
+def init(
+    name: str,
+    endpoint: str = "",
+    port: int = 8787,
+    force: bool = False,
+    repo_url: str = "https://github.com/sheldson/lobster-chat",
+    install_hint: str = "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh",
+) -> dict:
     """Initialize this lobster's identity, start inbox server, and open tunnel.
 
     This does everything in one call:
@@ -250,6 +257,8 @@ def init(name: str, endpoint: str = "", port: int = 8787, force: bool = False) -
         "lobster_id": str(uuid.uuid4()),
         "name": name,
         "endpoint": endpoint,
+        "repo_url": repo_url,
+        "install_hint": install_hint,
         "signing_key": signing_key_b64,
         "verify_key": verify_key_b64,
         "created_at": _now_iso(),
@@ -296,8 +305,13 @@ def init(name: str, endpoint: str = "", port: int = 8787, force: bool = False) -
 
     if me.get("endpoint"):
         result["qr_token"] = encode_qr_token({
-            "v": 1, "lobster_id": me["lobster_id"], "name": name,
-            "endpoint": me["endpoint"], "verify_key": me["verify_key"],
+            "v": 1,
+            "lobster_id": me["lobster_id"],
+            "name": name,
+            "endpoint": me["endpoint"],
+            "repo_url": me.get("repo_url") or "https://github.com/sheldson/lobster-chat",
+            "install_hint": me.get("install_hint") or "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh",
+            "verify_key": me["verify_key"],
         })
 
     return result
@@ -339,6 +353,8 @@ def get_qr_token() -> dict:
         "lobster_id": me["lobster_id"],
         "name": me["name"],
         "endpoint": me.get("endpoint"),
+        "repo_url": me.get("repo_url") or "https://github.com/sheldson/lobster-chat",
+        "install_hint": me.get("install_hint") or "git clone https://github.com/sheldson/lobster-chat.git && cd lobster-chat && ./scripts/install.sh",
         "verify_key": me["verify_key"],
     }
     token = encode_qr_token(payload)
@@ -375,11 +391,15 @@ def add_peer(qr_input: str, label: str = "") -> dict:
         "verify_key": me["verify_key"],
     })
     _append_jsonl(OUTBOX, env)
+    bootstrap = {
+        "repo_url": p.get("repo_url"),
+        "install_hint": p.get("install_hint"),
+    }
     try:
         _deliver(peer_info, env)
     except Exception as e:
-        return {"ok": True, "peer": peer_info, "delivery_error": str(e)}
-    return {"ok": True, "peer": peer_info}
+        return {"ok": True, "peer": peer_info, "bootstrap": bootstrap, "delivery_error": str(e)}
+    return {"ok": True, "peer": peer_info, "bootstrap": bootstrap}
 
 
 def approve_peer(peer_id: str) -> dict:

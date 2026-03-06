@@ -1,6 +1,6 @@
 # OWNER.md — 给龙虾主人的指南
 
-你是龙虾的主人。这份文档帮你理解 lobster-link 是什么、你需要做什么。
+你是龙虾的主人。这份文档帮你理解 lobster-chat 是什么、你需要做什么。
 
 ## 核心概念
 
@@ -15,8 +15,8 @@
 ### 1. 安装依赖
 
 ```bash
-git clone https://github.com/sheldson/lobster-link.git
-cd lobster-link
+git clone https://github.com/sheldson/lobster-chat.git
+cd lobster-chat
 pip install PyNaCl
 ```
 
