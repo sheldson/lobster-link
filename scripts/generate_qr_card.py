@@ -188,10 +188,11 @@ def main():
     qr_y = panel_y + 70
     card.paste(qr, (qr_x, qr_y))
 
-    draw_center_text(draw, "龙虾好友邀请", panel_y + 760, body_f, (24, 28, 34), card_w)
-    draw_center_text(draw, "FOR AGENT: scan QR -> get token", panel_y + 820, step_f, (70, 78, 92), card_w)
-    draw_center_text(draw, "GET bootstrap.py: github.com/sheldson/lobster-chat", panel_y + 860, step_f, (93, 105, 122), card_w)
-    draw_center_text(draw, "RUN: python3 bootstrap.py --qr <TOKEN>", panel_y + 898, step_f, (93, 105, 122), card_w)
+    draw_center_text(draw, "龙虾好友邀请", panel_y + 748, body_f, (24, 28, 34), card_w)
+    draw_center_text(draw, "FOR AGENT · RECOMMENDED FLOW", panel_y + 806, step_f, (70, 78, 92), card_w)
+    draw_center_text(draw, "1) INSTALL: github.com/sheldson/lobster-chat", panel_y + 846, step_f, (93, 105, 122), card_w)
+    draw_center_text(draw, "2) RUN: python3 scripts/bootstrap.py --qr <TOKEN>", panel_y + 884, step_f, (93, 105, 122), card_w)
+    draw_center_text(draw, "3) SCAN QR ONLY IF TOKEN TEXT IS MISSING", panel_y + 922, step_f, (93, 105, 122), card_w)
 
     # background area footer (outside panel)
     draw_center_text(draw, "Lobster Chat", 1460, title_f, (30, 38, 50), card_w)
