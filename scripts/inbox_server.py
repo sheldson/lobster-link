@@ -114,8 +114,13 @@ class InboxHandler(BaseHTTPRequestHandler):
             return self._json(503, {"ok": False, "error": "not_initialized"})
 
         frm = msg.get("from")
+        to_lobster = msg.get("to")
         intent = msg.get("intent", "")
         peers = st.get("peers", {})
+
+        # Message must be explicitly addressed to me
+        if not to_lobster or to_lobster != me.get("lobster_id"):
+            return self._json(403, {"ok": False, "error": "wrong_recipient"})
 
         # Check peer status: handshake intents can come from anyone, content requires active peer
         if intent not in HANDSHAKE_INTENTS:

@@ -529,11 +529,19 @@ def pull_messages() -> dict:
     events = []
     verified_msgs = []
     seen_ids = set()
+    recent_ids = s.setdefault("recent_message_ids", [])
+    recent_set = set(recent_ids)
+    state_changed = False
+
     for m in raw_msgs:
         msg_id = m.get("id", "")
         if msg_id in seen_ids:
             continue
         seen_ids.add(msg_id)
+
+        if msg_id and msg_id in recent_set:
+            events.append({"event": "replay_dropped", "from": m.get("from", ""), "message_id": msg_id})
+            continue
 
         # Verify signature — reject unsigned or invalid messages
         frm = m.get("from", "")
@@ -542,6 +550,11 @@ def pull_messages() -> dict:
         # Reject unsigned messages
         if not sig:
             events.append({"event": "unsigned_rejected", "from": frm, "message_id": m.get("id")})
+            continue
+
+        # Message must target this lobster
+        if m.get("to") != me.get("lobster_id"):
+            events.append({"event": "wrong_recipient", "from": frm, "message_id": m.get("id")})
             continue
 
         peer = s["peers"].get(frm)
@@ -570,10 +583,26 @@ def pull_messages() -> dict:
         m["sig"] = sig
         m["_sig_valid"] = True
         _append_jsonl(INBOX_ARCHIVE, m)
+
+        if msg_id:
+            recent_ids.append(msg_id)
+            recent_set.add(msg_id)
+            state_changed = True
+
         ev = _process_protocol_message(s, m)
         if ev:
             events.append(ev)
         verified_msgs.append(m)
+
+    # Keep replay cache bounded
+    max_recent_ids = 5000
+    if len(recent_ids) > max_recent_ids:
+        del recent_ids[:-max_recent_ids]
+        state_changed = True
+
+    if state_changed:
+        _save_state(s)
+
     return {"ok": True, "messages": verified_msgs, "events": events, "count": len(verified_msgs)}
 
 
